@@ -28,15 +28,17 @@ Built by Ahmed Ben Mohamed, Red Hat Certified Engineer (RHCE).
 
 ## Results
 
-Measured with Lynis 3.1.7 on a RHEL 9.4 VM (VMware), default role settings, no SSH key given (so password login stays on):
+Measured on two lab VMs (VMware), default role settings, no SSH key given (so password login stays on):
 
-| Host | Lynis hardening index | Warnings | Suggestions |
-|---|---|---|---|
-| RHEL 9.4, before | 67 | 2 | 40 |
-| **RHEL 9.4, after** | **78** | **1** | **32** |
-| Ubuntu 22.04 | _coming soon_ | | |
+| Host | Lynis version | Hardening index | Warnings | Suggestions |
+|---|---|---|---|---|
+| RHEL 9.4, before | 3.1.7 (EPEL) | 67 | 2 | 40 |
+| **RHEL 9.4, after** | | **78 (+11)** | **1** | **32** |
+| Ubuntu 22.04, before | 3.0.x (Ubuntu repo) | 60 | 2 | 52 |
+| **Ubuntu 22.04, after** | | **69 (+9)** | **1** | **44** |
 
-Second run of the role on the same host: `changed=0` (idempotent).
+Second run of the role on both hosts: `changed=0` (idempotent).
+Compare before vs after on the same host only: the two systems use different Lynis versions.
 
 Full reports: `reports/` (created by `playbooks/audit.yml`).
 
