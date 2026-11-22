@@ -1,0 +1,62 @@
+---
+- name: Warn when password login stays on
+  ansible.builtin.debug:
+    msg: "No admin public key given: password login stays ON to avoid locking you out. Set hardening_admin_pubkey to turn it off."
+  when: not (hardening_ssh_disable_password | bool)
+
+- name: Make sure the sshd runtime folder exists (needed by 'sshd -t')
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    mode: "0755"
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Generate missing SSH host keys (fresh images / containers)
+  ansible.builtin.command: ssh-keygen -A
+  args:
+    creates: /etc/ssh/ssh_host_ed25519_key
+
+- name: Login banner
+  ansible.builtin.template:
+    src: issue.net.j2
+    dest: /etc/issue.net
+    owner: root
+    group: root
+    mode: "0644"
+  when: hardening_ssh_banner | bool
+
+- name: Allow the custom SSH port in SELinux
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - hardening_ssh_port | int != 22
+    - ansible_facts['selinux']['status'] | default('disabled') == 'enabled'
+  block:
+    - name: Read SELinux ports already defined locally
+      ansible.builtin.command: semanage port -l -C
+      register: hardening_selinux_ports
+      changed_when: false
+
+    - name: Add the SSH port to ssh_port_t
+      ansible.builtin.command: "semanage port -a -t ssh_port_t -p tcp {{ hardening_ssh_port }}"
+      when: hardening_selinux_ports.stdout is not search('ssh_port_t\\s+tcp\\s+.*\\b' ~ hardening_ssh_port ~ '\\b')
+      changed_when: true
+
+- name: SSH hardening drop-in (first match wins, so it is named 00-)
+  ansible.builtin.template:
+    src: sshd_hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-hardening.conf
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart SSH
+
+- name: Main sshd_config is readable by root only
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Test the full SSH configuration before any restart
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false

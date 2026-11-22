@@ -1,0 +1,69 @@
+---
+# Run a Lynis security audit and save the score.
+#   Before hardening:  ansible-playbook playbooks/audit.yml -e audit_label=before
+#   After hardening:   ansible-playbook playbooks/audit.yml -e audit_label=after
+- name: Lynis security audit
+  hosts: all
+  become: true
+  vars:
+    audit_label: before
+    audit_local_dir: "{{ playbook_dir }}/../reports"
+  tasks:
+    - name: Import the EPEL signing key (RHEL)
+      ansible.builtin.rpm_key:
+        key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-{{ ansible_facts['distribution_major_version'] }}
+        state: present
+      when: ansible_facts['distribution'] == 'RedHat'
+
+    - name: Enable EPEL (needed for Lynis)
+      ansible.builtin.dnf:
+        name: "{{ 'https://dl.fedoraproject.org/pub/epel/epel-release-latest-' ~ ansible_facts['distribution_major_version'] ~ '.noarch.rpm' if ansible_facts['distribution'] == 'RedHat' else 'epel-release' }}"
+        state: present
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Install Lynis
+      ansible.builtin.package:
+        name: lynis
+        state: present
+
+    - name: Run the audit (takes 1-2 minutes)
+      ansible.builtin.command: lynis audit system --quick --no-colors
+      register: audit_run
+      changed_when: false
+
+    - name: Read the report data
+      ansible.builtin.slurp:
+        src: /var/log/lynis-report.dat
+      register: audit_report
+
+    - name: Extract score and counts
+      ansible.builtin.set_fact:
+        audit_score: "{{ (audit_report.content | b64decode | regex_search('hardening_index=(\\d+)', '\\1') | first) | default('?') }}"
+        audit_warnings: "{{ audit_report.content | b64decode | regex_findall('warning\\[\\]=') | length }}"
+        audit_suggestions: "{{ audit_report.content | b64decode | regex_findall('suggestion\\[\\]=') | length }}"
+
+    - name: Save the full console output on this computer
+      ansible.builtin.copy:
+        content: "{{ audit_run.stdout }}"
+        dest: "{{ audit_local_dir }}/{{ report_prefix | default(inventory_hostname) }}-{{ audit_label }}.txt"
+        mode: "0644"
+      delegate_to: localhost
+      become: false
+
+    - name: Save the summary on this computer
+      ansible.builtin.copy:
+        content: |
+          host: {{ report_prefix | default(inventory_hostname) }}
+          os: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+          label: {{ audit_label }}
+          lynis_hardening_index: {{ audit_score }}
+          warnings: {{ audit_warnings }}
+          suggestions: {{ audit_suggestions }}
+        dest: "{{ audit_local_dir }}/{{ report_prefix | default(inventory_hostname) }}-{{ audit_label }}-summary.txt"
+        mode: "0644"
+      delegate_to: localhost
+      become: false
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "{{ report_prefix | default(inventory_hostname) }} [{{ audit_label }}] Lynis hardening index = {{ audit_score }} | warnings = {{ audit_warnings }} | suggestions = {{ audit_suggestions }}"

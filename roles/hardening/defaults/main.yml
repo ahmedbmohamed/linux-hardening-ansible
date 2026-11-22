@@ -1,0 +1,55 @@
+---
+# ---------- Admin user ----------
+# Create a sudo user that logs in with an SSH key.
+hardening_admin_user: deploy
+# Public key for the admin user, e.g. "ssh-ed25519 AAAA... you@laptop".
+# Leave empty to skip creating the user.
+hardening_admin_pubkey: ""
+
+# ---------- SSH ----------
+hardening_ssh_port: 22
+hardening_ssh_permit_root_login: "no"
+# Password login is only turned off when a key is installed (anti-lockout),
+# unless you force it.
+hardening_ssh_disable_password: "{{ hardening_admin_pubkey | length > 0 }}"
+hardening_ssh_max_auth_tries: 3
+hardening_ssh_client_alive_interval: 300
+hardening_ssh_client_alive_count_max: 2
+hardening_ssh_allow_users: []          # e.g. ["deploy"]; empty = no restriction
+hardening_ssh_banner: true
+
+# ---------- Firewall (firewalld on RHEL family, UFW on Debian family) ----------
+hardening_firewall: true
+hardening_firewall_allowed_tcp_ports:
+  - 80
+  - 443
+# The SSH port is always added automatically before the firewall is enabled.
+
+# ---------- Fail2ban ----------
+hardening_fail2ban: true
+hardening_fail2ban_maxretry: 5
+hardening_fail2ban_findtime: 10m
+hardening_fail2ban_bantime: 1h
+hardening_fail2ban_ignoreip: []        # e.g. ["203.0.113.10"]
+
+# ---------- Automatic security updates ----------
+hardening_auto_updates: true
+# Debian family: reboot automatically at this time if an update needs it ("" = never)
+hardening_auto_reboot_time: ""
+
+# ---------- Kernel / network sysctl ----------
+hardening_sysctl: true
+
+# ---------- Audit logging ----------
+hardening_auditd: true
+
+# ---------- Packages ----------
+hardening_remove_packages:
+  - telnet
+  - rsh
+  - talk
+  - ypbind
+
+# ---------- Test mode ----------
+# Set to false inside containers (no systemd): services are not started.
+hardening_manage_services: true

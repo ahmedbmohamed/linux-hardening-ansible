@@ -1,0 +1,60 @@
+---
+# ---------------- RHEL family: dnf-automatic ----------------
+- name: Automatic updates (RHEL family)
+  when: ansible_facts['os_family'] == 'RedHat'
+  block:
+    - name: Install dnf-automatic
+      ansible.builtin.dnf:
+        name: dnf-automatic
+        state: present
+
+    - name: Apply security updates only, automatically
+      ansible.builtin.lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: "^{{ item.key }}\\s*="
+        line: "{{ item.key }} = {{ item.value }}"
+        insertafter: '^\[commands\]'
+      loop:
+        - { key: upgrade_type, value: security }
+        - { key: apply_updates, value: "yes" }
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Enable the dnf-automatic timer
+      ansible.builtin.systemd_service:
+        name: dnf-automatic.timer
+        state: started
+        enabled: true
+      when: hardening_manage_services | bool
+
+# ---------------- Debian family: unattended-upgrades ----------------
+- name: Automatic updates (Debian family)
+  when: ansible_facts['os_family'] == 'Debian'
+  block:
+    - name: Install unattended-upgrades
+      ansible.builtin.apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Turn on daily security updates
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::AutocleanInterval "7";
+
+    - name: Automatic reboot setting
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/52hardening-reboot
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          Unattended-Upgrade::Automatic-Reboot "{{ 'true' if hardening_auto_reboot_time | length > 0 else 'false' }}";
+          {% if hardening_auto_reboot_time | length > 0 %}
+          Unattended-Upgrade::Automatic-Reboot-Time "{{ hardening_auto_reboot_time }}";
+          {% endif %}

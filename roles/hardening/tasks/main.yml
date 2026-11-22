@@ -1,0 +1,56 @@
+---
+- name: Check that the OS is supported
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] in ['RedHat', 'Debian']
+    fail_msg: "Supported: RHEL/Rocky/AlmaLinux 9 and Ubuntu/Debian. Found {{ ansible_facts['distribution'] }}."
+    quiet: true
+
+- name: Load OS family variables
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Packages
+  ansible.builtin.import_tasks: packages.yml
+  tags: [packages]
+
+- name: Admin user
+  ansible.builtin.import_tasks: users.yml
+  tags: [users]
+
+- name: SSH
+  ansible.builtin.import_tasks: ssh.yml
+  tags: [ssh]
+
+- name: Firewall
+  ansible.builtin.import_tasks: firewall.yml
+  when: hardening_firewall | bool
+  tags: [firewall]
+
+- name: Fail2ban
+  ansible.builtin.import_tasks: fail2ban.yml
+  when: hardening_fail2ban | bool
+  tags: [fail2ban]
+
+- name: Automatic security updates
+  ansible.builtin.import_tasks: updates.yml
+  when: hardening_auto_updates | bool
+  tags: [updates]
+
+- name: Kernel and network settings
+  ansible.builtin.import_tasks: sysctl.yml
+  when: hardening_sysctl | bool
+  tags: [sysctl]
+
+- name: Audit logging, SELinux / AppArmor check
+  ansible.builtin.import_tasks: audit.yml
+  tags: [audit]
+
+- name: Apply pending restarts now, before the summary
+  ansible.builtin.meta: flush_handlers
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      - "Host hardened: {{ inventory_hostname }} ({{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }})"
+      - "SSH port {{ hardening_ssh_port }}, root login {{ hardening_ssh_permit_root_login }}, password login {{ 'off' if hardening_ssh_disable_password | bool else 'ON (no key given)' }}"
+      - "Firewall {{ 'on' if hardening_firewall | bool else 'skipped' }}, Fail2ban {{ 'on' if hardening_fail2ban | bool else 'skipped' }}, auto updates {{ 'on' if hardening_auto_updates | bool else 'skipped' }}"

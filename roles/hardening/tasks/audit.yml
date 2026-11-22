@@ -1,0 +1,49 @@
+---
+- name: Start and enable auditd
+  ansible.builtin.systemd_service:
+    name: "{{ hardening_auditd_service }}"
+    state: started
+    enabled: true
+  when:
+    - hardening_auditd | bool
+    - hardening_manage_services | bool
+
+- name: Audit rules for identity, sudo and SSH changes
+  ansible.builtin.copy:
+    dest: /etc/audit/rules.d/50-hardening.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /etc/passwd -p wa -k identity
+      -w /etc/group -p wa -k identity
+      -w /etc/shadow -p wa -k identity
+      -w /etc/sudoers -p wa -k sudoers
+      -w /etc/sudoers.d/ -p wa -k sudoers
+      -w /etc/ssh/sshd_config -p wa -k sshd
+      -w /etc/ssh/sshd_config.d/ -p wa -k sshd
+  when: hardening_auditd | bool
+  notify: Load audit rules
+
+# SELinux / AppArmor are checked, never switched on automatically:
+# turning SELinux on needs a full relabel and a reboot.
+- name: SELinux must be enforcing (RHEL family)
+  ansible.builtin.debug:
+    msg: "WARNING: SELinux is {{ ansible_facts['selinux']['mode'] | default(ansible_facts['selinux']['status']) }}. Set SELINUX=enforcing in /etc/selinux/config and reboot."
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - ansible_facts['selinux']['mode'] | default('disabled') != 'enforcing'
+
+- name: Check AppArmor (Debian family)
+  ansible.builtin.command: aa-enabled
+  register: hardening_apparmor
+  changed_when: false
+  failed_when: false
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: AppArmor should be enabled
+  ansible.builtin.debug:
+    msg: "WARNING: AppArmor is not enabled on this host."
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - hardening_apparmor.stdout | default('') != 'Yes'

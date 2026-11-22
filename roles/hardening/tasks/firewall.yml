@@ -1,0 +1,87 @@
+---
+- name: Ports to open (SSH port always first)
+  ansible.builtin.set_fact:
+    hardening_open_ports: "{{ ([hardening_ssh_port | int] + hardening_firewall_allowed_tcp_ports | map('int') | list) | unique }}"
+
+# ---------------- RHEL family: firewalld ----------------
+- name: Firewalld (RHEL family)
+  when: ansible_facts['os_family'] == 'RedHat'
+  block:
+    - name: Install firewalld
+      ansible.builtin.dnf:
+        name: firewalld
+        state: present
+
+    - name: Start and enable firewalld
+      ansible.builtin.systemd_service:
+        name: firewalld
+        state: started
+        enabled: true
+      when: hardening_manage_services | bool
+
+    - name: Check which ports are already open
+      ansible.builtin.command: "firewall-cmd --permanent --query-port={{ item }}/tcp"
+      loop: "{{ hardening_open_ports }}"
+      register: hardening_fw_query
+      changed_when: false
+      failed_when: hardening_fw_query.rc not in [0, 1]
+
+    - name: Open the missing ports
+      ansible.builtin.command: "firewall-cmd --permanent --add-port={{ item.item }}/tcp"
+      loop: "{{ hardening_fw_query.results }}"
+      loop_control:
+        label: "{{ item.item }}/tcp"
+      when: item.rc == 1
+      changed_when: true
+      notify: Reload firewalld
+
+    - name: Check whether the cockpit service is exposed
+      ansible.builtin.command: firewall-cmd --permanent --query-service=cockpit
+      register: hardening_fw_cockpit
+      changed_when: false
+      failed_when: hardening_fw_cockpit.rc not in [0, 1]
+
+    - name: Close cockpit (web console) unless you need it
+      ansible.builtin.command: firewall-cmd --permanent --remove-service=cockpit
+      when: hardening_fw_cockpit.rc == 0
+      changed_when: true
+      notify: Reload firewalld
+
+# ---------------- Debian family: UFW ----------------
+- name: UFW (Debian family)
+  when: ansible_facts['os_family'] == 'Debian'
+  block:
+    - name: Install UFW
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Read current UFW settings
+      ansible.builtin.command: ufw status verbose
+      register: hardening_ufw_status
+      changed_when: false
+
+    - name: Deny incoming, allow outgoing by default
+      ansible.builtin.lineinfile:
+        path: /etc/default/ufw
+        regexp: "^{{ item.key }}="
+        line: '{{ item.key }}="{{ item.value }}"'
+      loop:
+        - { key: DEFAULT_INPUT_POLICY, value: DROP }
+        - { key: DEFAULT_OUTPUT_POLICY, value: ACCEPT }
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"
+      notify: Reload UFW
+
+    - name: Allow the needed ports (SSH first, so the session is never cut)
+      ansible.builtin.command: "ufw allow {{ item }}/tcp"
+      loop: "{{ hardening_open_ports }}"
+      register: hardening_ufw_allow
+      changed_when: "'Skipping' not in hardening_ufw_allow.stdout"
+
+    - name: Turn UFW on
+      ansible.builtin.command: ufw --force enable
+      when:
+        - hardening_manage_services | bool
+        - "'Status: active' not in hardening_ufw_status.stdout"
+      changed_when: true

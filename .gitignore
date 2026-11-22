@@ -1,0 +1,5 @@
+inventory/hosts.ini
+reports/*.txt
+.vagrant/
+*.retry
+second-run.log

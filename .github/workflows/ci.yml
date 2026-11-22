@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ansible-core ansible-lint
+      - run: ansible-lint
+
+  ubuntu:
+    name: Ubuntu 24.04 (real systemd, before/after audit, idempotence)
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ansible-core
+      - name: Local inventory
+        run: echo 'localhost ansible_connection=local ansible_python_interpreter=/usr/bin/python3' > inventory/hosts.ini
+      - name: Audit before
+        run: ansible-playbook playbooks/audit.yml -e audit_label=before -e report_prefix=ci-ubuntu24
+      - name: Harden
+        run: ansible-playbook playbooks/site.yml
+      - name: Idempotence (second run must change nothing)
+        run: |
+          ansible-playbook playbooks/site.yml | tee second-run.log
+          grep -qE 'changed=0 +unreachable=0 +failed=0' second-run.log
+      - name: Audit after
+        run: ansible-playbook playbooks/audit.yml -e audit_label=after -e report_prefix=ci-ubuntu24
+      - name: Show scores
+        run: cat reports/*-summary.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lynis-reports-ubuntu
+          path: reports/
+
+  rocky:
+    name: Rocky Linux 9 (container, no systemd)
+    needs: lint
+    runs-on: ubuntu-24.04
+    container: rockylinux/rockylinux:9
+    steps:
+      - uses: actions/checkout@v4
+      - run: dnf install -y python3-pip openssh-server && pip3 install ansible-core
+      - name: Local inventory
+        run: echo 'localhost ansible_connection=local' > inventory/hosts.ini
+      - name: Harden (services and firewall skipped in a container)
+        run: ansible-playbook playbooks/site.yml -e hardening_manage_services=false -e hardening_firewall=false
+      - name: Idempotence
+        run: |
+          ansible-playbook playbooks/site.yml -e hardening_manage_services=false -e hardening_firewall=false | tee second-run.log
+          grep -qE 'changed=0 +unreachable=0 +failed=0' second-run.log

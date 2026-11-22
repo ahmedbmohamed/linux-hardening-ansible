@@ -1,0 +1,10 @@
+---
+# Your settings. All options with their defaults are in
+# roles/hardening/defaults/main.yml
+
+# Paste your public key here (cat ~/.ssh/id_ed25519.pub) to turn off password login.
+hardening_admin_user: deploy
+hardening_admin_pubkey: ""
+
+hardening_ssh_port: 22
+hardening_firewall_allowed_tcp_ports: [80, 443]

@@ -1,0 +1,11 @@
+---
+hardening_ssh_service: ssh
+hardening_sudo_group: sudo
+hardening_base_packages:
+  - auditd
+  - chrony
+  - openssh-server
+hardening_fail2ban_packages:
+  - fail2ban
+  - python3-systemd
+hardening_auditd_service: auditd

@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: hardening
+  author: Ahmed Ben Mohamed
+  description: Baseline security hardening for Rocky/RHEL/AlmaLinux 9 and Ubuntu 24.04 / Debian 12
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["9"]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+  galaxy_tags: [security, hardening, ssh, firewall, fail2ban, rhel, ubuntu]
+dependencies: []

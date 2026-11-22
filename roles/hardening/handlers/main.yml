@@ -1,0 +1,50 @@
+---
+- name: Reload systemd units (Ubuntu ssh.socket reads the Port from sshd_config)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when:
+    - hardening_manage_services | bool
+    - ansible_facts['os_family'] == 'Debian'
+  listen: Restart SSH
+
+- name: Restart ssh.socket if the host uses socket activation
+  ansible.builtin.command: systemctl try-restart ssh.socket  # noqa: command-instead-of-module (try-restart = only if active)
+  when:
+    - hardening_manage_services | bool
+    - ansible_facts['os_family'] == 'Debian'
+  changed_when: true
+  failed_when: false  # Ubuntu 22.04 / Debian have no ssh.socket
+  listen: Restart SSH
+
+- name: Restart the SSH service
+  ansible.builtin.systemd_service:
+    name: "{{ hardening_ssh_service }}"
+    state: restarted
+  when: hardening_manage_services | bool
+  listen: Restart SSH
+
+- name: Reload firewalld
+  ansible.builtin.command: firewall-cmd --reload
+  when: hardening_manage_services | bool
+  changed_when: true
+
+- name: Restart fail2ban
+  ansible.builtin.systemd_service:
+    name: fail2ban
+    state: restarted
+  when: hardening_manage_services | bool
+
+- name: Apply sysctl
+  ansible.builtin.command: sysctl --system
+  when: hardening_manage_services | bool
+  changed_when: true
+
+- name: Load audit rules
+  ansible.builtin.command: augenrules --load
+  when: hardening_manage_services | bool
+  changed_when: true
+
+- name: Reload UFW
+  ansible.builtin.command: ufw reload
+  when: hardening_manage_services | bool
+  changed_when: true

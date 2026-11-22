@@ -1,0 +1,11 @@
+---
+hardening_ssh_service: sshd
+hardening_sudo_group: wheel
+hardening_base_packages:
+  - audit
+  - chrony
+  - policycoreutils-python-utils
+hardening_fail2ban_packages:
+  - fail2ban
+  - fail2ban-systemd
+hardening_auditd_service: auditd
