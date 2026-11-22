@@ -8,7 +8,7 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: pip install ansible-core ansible-lint
       - run: ansible-lint
 
@@ -17,7 +17,7 @@ jobs:
     needs: lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: pip install ansible-core
       - name: Local inventory
         run: echo 'localhost ansible_connection=local ansible_python_interpreter=/usr/bin/python3' > inventory/hosts.ini
@@ -33,7 +33,7 @@ jobs:
         run: ansible-playbook playbooks/audit.yml -e audit_label=after -e report_prefix=ci-ubuntu24
       - name: Show scores
         run: cat reports/*-summary.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: lynis-reports-ubuntu
           path: reports/
@@ -44,12 +44,17 @@ jobs:
     runs-on: ubuntu-24.04
     container: rockylinux/rockylinux:9
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: dnf install -y python3-pip openssh-server && pip3 install ansible-core
       - name: Local inventory
         run: echo 'localhost ansible_connection=local' > inventory/hosts.ini
       - name: Harden (services and firewall skipped in a container)
-        run: ansible-playbook playbooks/site.yml -e hardening_manage_services=false -e hardening_firewall=false
+        run: |
+          set -o pipefail
+          ansible-playbook playbooks/site.yml -e hardening_manage_services=false -e hardening_firewall=false 2>&1 | tee run.log || {
+            grep -E -A4 'FAILED!|fatal:|ERROR' run.log | head -30 | sed 's/^/::error::/'
+            exit 1
+          }
       - name: Idempotence
         run: |
           ansible-playbook playbooks/site.yml -e hardening_manage_services=false -e hardening_firewall=false | tee second-run.log
