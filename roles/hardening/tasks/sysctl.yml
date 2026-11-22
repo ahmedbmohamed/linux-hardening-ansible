@@ -1,4 +1,12 @@
 ---
+- name: Make sure the sysctl.d folder exists (missing in minimal images)
+  ansible.builtin.file:
+    path: /etc/sysctl.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Kernel and network hardening settings
   ansible.builtin.template:
     src: 99-hardening.conf.j2
