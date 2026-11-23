@@ -58,7 +58,20 @@ def system_info():
 
 
 # ---------------------------------------------------------------- network
-def listening_ports():
+def firewall_active():
+    rc, out = run(["ufw", "status"])
+    if rc == 0 and "Status: active" in out:
+        return "ufw"
+    rc, out = run(["firewall-cmd", "--state"])
+    if rc == 0 and "running" in out:
+        return "firewalld"
+    rc, out = run(["nft", "list", "ruleset"])
+    if out.count("\n") > 10:
+        return "nftables rules"
+    return "none"
+
+
+def listening_ports(firewall):
     rc, out = run(["ss", "-H", "-tulpn"])
     ports = []
     for line in out.splitlines():
@@ -70,19 +83,32 @@ def listening_ports():
         addr, _, port = local.rpartition(":")
         ports.append({"proto": proto, "address": addr, "port": port,
                       "process": proc.group(1) if proc else "?"})
-    exposed = [p for p in ports
-               if p["address"] in ("0.0.0.0", "*", "[::]", "::")
-               and p["port"] not in ("22", "80", "443")
-               and not (p["proto"] == "udp" and p["port"] in ("68", "546", "323", "5353"))]
+
+    def is_service(p):
+        if p["address"] not in ("0.0.0.0", "*", "[::]", "::"):
+            return False
+        if p["port"] in ("22", "80", "443"):
+            return False
+        if p["proto"] == "udp":
+            # DHCP/NTP/mDNS clients and temporary client sockets (browsers etc.) are not services
+            if p["port"] in ("68", "546", "123", "323", "5353") or not p["port"].isdigit() or int(p["port"]) >= 32768:
+                return False
+        return True
+
     seen = set()
-    for p in exposed:
+    for p in filter(is_service, ports):
         key = (p["proto"], p["port"])
         if key in seen:
             continue
         seen.add(key)
-        add("medium", "Network", "Service open to the internet on port %s/%s (%s)" % (p["port"], p["proto"], p["process"]),
-            "It listens on all interfaces. If the firewall does not block it, anyone can reach it.",
-            "Bind it to 127.0.0.1 if only local apps use it, or close the port in the firewall.")
+        if firewall == "none":
+            add("medium", "Network", "Service open to the internet on port %s/%s (%s)" % (p["port"], p["proto"], p["process"]),
+                "It listens on all interfaces and no firewall is active, so anyone can reach it.",
+                "Bind it to 127.0.0.1 if only local apps use it, or turn on the firewall and close the port.")
+        else:
+            add("low", "Network", "Service listening on all interfaces: port %s/%s (%s)" % (p["port"], p["proto"], p["process"]),
+                "The firewall (%s) is active; check that this port is blocked unless it must be public." % firewall,
+                "Bind it to 127.0.0.1 or stop the service if it is not needed.")
     return ports
 
 
@@ -344,7 +370,7 @@ def http_headers():
 
 
 # ---------------------------------------------------------------- hardening state
-def hardening_state(family):
+def hardening_state(family, firewall):
     st = {}
     rc, out = run(["sshd", "-T"])
     if rc != 0:
@@ -375,15 +401,7 @@ def hardening_state(family):
         except ValueError:
             pass
 
-    rc, out = run(["ufw", "status"])
-    ufw = rc == 0 and "Status: active" in out
-    rc, out = run(["firewall-cmd", "--state"])
-    fwd = rc == 0 and "running" in out
-    st["firewall"] = "ufw" if ufw else ("firewalld" if fwd else "none")
-    if st["firewall"] == "none":
-        rc, out = run(["nft", "list", "ruleset"])
-        if out.count("\n") > 10:
-            st["firewall"] = "nftables rules"
+    st["firewall"] = firewall
     if st["firewall"] == "none":
         add("high", "Firewall", "No active firewall found",
             "Every service that listens on the network is reachable from the internet.",
@@ -453,9 +471,10 @@ def main():
     a = ap.parse_args()
 
     info = system_info()
+    fw = firewall_active()
     data = {
         "system": info,
-        "listening_ports": listening_ports(),
+        "listening_ports": listening_ports(fw),
         "accounts": accounts(),
         "cron_jobs": cron_jobs(),
         "local_services": systemd_units(),
@@ -463,7 +482,7 @@ def main():
         "suid": suid_files(),
         "web": web_scan(a.web_roots, a.recent_days, a.max_files),
         "http": http_headers(),
-        "hardening": hardening_state(info["os_family"]),
+        "hardening": hardening_state(info["os_family"], fw),
     }
     order = {"high": 0, "medium": 1, "low": 2, "info": 3}
     data["findings"] = sorted(FINDINGS, key=lambda f: order[f["severity"]])
