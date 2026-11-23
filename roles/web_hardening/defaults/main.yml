@@ -1,0 +1,27 @@
+---
+# Folders searched for WordPress sites (wp-config.php), up to 4 levels deep.
+web_hardening_search_paths:
+  - /var/www
+# Extra WordPress folders to harden, e.g. ["/srv/shop"]
+web_hardening_wordpress_paths: []
+
+# Server-wide settings (hide versions, security headers, no directory listing)
+web_hardening_nginx: true          # applied only if Nginx is installed
+web_hardening_apache: true         # applied only if Apache is installed
+web_hardening_security_headers: true
+
+# WordPress
+web_hardening_wordpress: true
+web_hardening_fix_permissions: true      # folders 755, files 644
+web_hardening_block_php_in_uploads: true
+web_hardening_block_xmlrpc: true
+web_hardening_disallow_file_edit: true   # no theme/plugin editor in wp-admin
+
+# Users the web server / PHP runs as (wp-config.php gets 640 only if it belongs to one of them)
+web_hardening_web_users:
+  - www-data
+  - nginx
+  - apache
+
+# Test mode: false inside containers without systemd
+web_hardening_manage_services: true

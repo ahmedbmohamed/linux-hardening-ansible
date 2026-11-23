@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+# WordPress security rules (web_hardening role). Included in each WordPress server block.
+
+# Hidden files (.git, .env, .htaccess...), except Let's Encrypt
+location ~ /\.(?!well-known) {
+    deny all;
+}
+
+# Config, logs and backups that must never be downloaded
+location ~* (wp-config\.php|readme\.html|license\.txt|\.(sql|bak|log|old|swp)$) {
+    deny all;
+}
+{% if web_hardening_block_php_in_uploads | bool %}
+
+# No PHP may run from the uploads folder (stops most uploaded web shells)
+location ~* /wp-content/uploads/.*\.(php|phtml|php[0-9]|phar)$ {
+    deny all;
+}
+{% endif %}
+{% if web_hardening_block_xmlrpc | bool %}
+
+# XML-RPC is a common brute-force and DDoS target
+location = /xmlrpc.php {
+    deny all;
+}
+{% endif %}

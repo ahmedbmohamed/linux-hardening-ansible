@@ -1,0 +1,49 @@
+---
+# Runs once per WordPress folder (web_hardening_wp_root)
+- name: "WordPress: read wp-config.php | {{ web_hardening_wp_root }}"
+  ansible.builtin.stat:
+    path: "{{ web_hardening_wp_root }}/wp-config.php"
+  register: web_hardening_wpconfig
+
+- name: "WordPress: folders to 755 | {{ web_hardening_wp_root }}"
+  ansible.builtin.command: >-
+    find {{ web_hardening_wp_root | quote }} -xdev -type d ! -perm 0755 -print -exec chmod 0755 {} +
+  register: web_hardening_wp_dirs
+  changed_when: web_hardening_wp_dirs.stdout | length > 0
+  when: web_hardening_fix_permissions | bool
+
+- name: "WordPress: files to 644 (except wp-config.php) | {{ web_hardening_wp_root }}"
+  ansible.builtin.command: >-
+    find {{ web_hardening_wp_root | quote }} -xdev -type f ! -name wp-config.php ! -perm 0644 -print -exec chmod 0644 {} +
+  register: web_hardening_wp_files
+  changed_when: web_hardening_wp_files.stdout | length > 0
+  when: web_hardening_fix_permissions | bool
+
+- name: "WordPress: wp-config.php to 640 (only when owned by the web user, so the site keeps working) | {{ web_hardening_wp_root }}"
+  ansible.builtin.file:
+    path: "{{ web_hardening_wp_root }}/wp-config.php"
+    mode: "0640"
+  when:
+    - web_hardening_fix_permissions | bool
+    - web_hardening_wpconfig.stat.exists
+    - (web_hardening_wpconfig.stat.pw_name in web_hardening_web_users) or (web_hardening_wpconfig.stat.gr_name in web_hardening_web_users)
+
+- name: "WordPress: wp-config.php owner warning | {{ web_hardening_wp_root }}"
+  ansible.builtin.debug:
+    msg: >-
+      wp-config.php is owned by {{ web_hardening_wpconfig.stat.pw_name }}:{{ web_hardening_wpconfig.stat.gr_name }},
+      not by the web user, so its mode was left as it is ({{ web_hardening_wpconfig.stat.mode }}) to avoid breaking the site.
+  when:
+    - web_hardening_wpconfig.stat.exists
+    - not ((web_hardening_wpconfig.stat.pw_name in web_hardening_web_users) or (web_hardening_wpconfig.stat.gr_name in web_hardening_web_users))
+
+- name: "WordPress: turn off the theme/plugin file editor | {{ web_hardening_wp_root }}"
+  ansible.builtin.lineinfile:
+    path: "{{ web_hardening_wp_root }}/wp-config.php"
+    regexp: "DISALLOW_FILE_EDIT"
+    line: "define( 'DISALLOW_FILE_EDIT', true );"
+    insertbefore: "^require_once.*wp-settings\\.php"
+    firstmatch: true
+  when:
+    - web_hardening_disallow_file_edit | bool
+    - web_hardening_wpconfig.stat.exists

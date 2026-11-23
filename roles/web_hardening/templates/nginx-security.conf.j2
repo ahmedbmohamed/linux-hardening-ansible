@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+# Server-wide security settings (web_hardening role)
+server_tokens off;
+{% if web_hardening_security_headers | bool %}
+# Note: a server/location block with its own add_header replaces these.
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+{% endif %}

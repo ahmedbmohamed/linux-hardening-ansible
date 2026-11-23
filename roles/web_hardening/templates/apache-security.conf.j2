@@ -1,0 +1,51 @@
+# {{ ansible_managed }}
+# Server-wide security settings (web_hardening role)
+ServerTokens Prod
+ServerSignature Off
+TraceEnable Off
+{% if web_hardening_security_headers | bool %}
+
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+</IfModule>
+{% endif %}
+
+# No directory listing under the web root
+<Directory "/var/www">
+    Options -Indexes
+</Directory>
+<Directory "/var/www/html">
+    Options -Indexes
+</Directory>
+
+# Hidden files (.git, .env...) except Let's Encrypt
+<DirectoryMatch "/\.(?!well-known)">
+    Require all denied
+</DirectoryMatch>
+<FilesMatch "^\.(?!well-known)">
+    Require all denied
+</FilesMatch>
+{% for root in web_hardening_wp_roots %}
+
+# WordPress: {{ root }}
+<Directory "{{ root }}">
+    <FilesMatch "^(wp-config\.php|readme\.html|license\.txt)$|\.(sql|bak|log|old|swp)$">
+        Require all denied
+    </FilesMatch>
+{% if web_hardening_block_xmlrpc | bool %}
+    <Files "xmlrpc.php">
+        Require all denied
+    </Files>
+{% endif %}
+</Directory>
+{% if web_hardening_block_php_in_uploads | bool %}
+<Directory "{{ root }}/wp-content/uploads">
+    <FilesMatch "\.(php|phtml|php[0-9]|phar)$">
+        Require all denied
+    </FilesMatch>
+</Directory>
+{% endif %}
+{% endfor %}

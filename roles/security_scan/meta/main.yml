@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: security_scan
+  author: Ahmed Ben Mohamed
+  description: Read-only Linux security scan with a client-ready Markdown report
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["8", "9"]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+  galaxy_tags: [security, audit, report, malware, linux]
+dependencies: []

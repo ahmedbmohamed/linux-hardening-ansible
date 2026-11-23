@@ -1,0 +1,56 @@
+---
+- name: Read installed packages
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Detect web servers
+  ansible.builtin.set_fact:
+    web_hardening_has_nginx: "{{ 'nginx' in ansible_facts.packages }}"
+    web_hardening_has_apache: "{{ 'apache2' in ansible_facts.packages or 'httpd' in ansible_facts.packages }}"
+    web_hardening_apache_conf_dir: "{{ '/etc/apache2/conf-available' if ansible_facts['os_family'] == 'Debian' else '/etc/httpd/conf.d' }}"
+    web_hardening_apache_ctl: "{{ 'apache2ctl' if ansible_facts['os_family'] == 'Debian' else 'apachectl' }}"
+    web_hardening_apache_service: "{{ 'apache2' if ansible_facts['os_family'] == 'Debian' else 'httpd' }}"
+
+- name: Find WordPress sites
+  ansible.builtin.find:
+    paths: "{{ web_hardening_search_paths }}"
+    patterns: wp-config.php
+    recurse: true
+    depth: 4
+  register: web_hardening_wp_found
+  when: web_hardening_wordpress | bool
+
+- name: List of WordPress folders
+  ansible.builtin.set_fact:
+    web_hardening_wp_roots: >-
+      {{ ((web_hardening_wp_found.files | default([]) | map(attribute='path') | map('dirname') | list)
+          + web_hardening_wordpress_paths) | unique }}
+
+- name: Nginx
+  ansible.builtin.include_tasks: nginx.yml
+  when:
+    - web_hardening_nginx | bool
+    - web_hardening_has_nginx | bool
+
+- name: Apache
+  ansible.builtin.include_tasks: apache.yml
+  when:
+    - web_hardening_apache | bool
+    - web_hardening_has_apache | bool
+
+- name: WordPress files and settings
+  ansible.builtin.include_tasks: wordpress.yml
+  loop: "{{ web_hardening_wp_roots }}"
+  loop_control:
+    loop_var: web_hardening_wp_root
+  when: web_hardening_wordpress | bool
+
+- name: Apply pending reloads now
+  ansible.builtin.meta: flush_handlers
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      - "Nginx: {{ 'hardened' if (web_hardening_has_nginx and web_hardening_nginx) else 'not installed / skipped' }}"
+      - "Apache: {{ 'hardened' if (web_hardening_has_apache and web_hardening_apache) else 'not installed / skipped' }}"
+      - "WordPress sites: {{ web_hardening_wp_roots | join(', ') if web_hardening_wp_roots else 'none found' }}"

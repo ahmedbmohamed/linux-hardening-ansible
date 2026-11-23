@@ -1,5 +1,7 @@
 inventory/hosts.ini
-reports/*.txt
+reports/*
+!reports/.gitkeep
 .vagrant/
 *.retry
 second-run.log
+*.log

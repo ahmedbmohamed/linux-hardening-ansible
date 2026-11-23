@@ -59,3 +59,49 @@ jobs:
         run: |
           ansible-playbook playbooks/site.yml -e hardening_manage_services=false -e hardening_firewall=false | tee second-run.log
           grep -qE 'changed=0 +unreachable=0 +failed=0' second-run.log
+
+  web:
+    name: Web hardening + security scan (Nginx, demo WordPress site)
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: pip install ansible-core && sudo apt-get update -q && sudo apt-get install -y -q nginx
+      - name: Local inventory
+        run: echo 'localhost ansible_connection=local ansible_python_interpreter=/usr/bin/python3' > inventory/hosts.ini
+      - name: Create the demo "compromised" WordPress site
+        run: sudo bash tests/demo-site.sh
+      - name: Scan before
+        run: |
+          set -o pipefail
+          ansible-playbook playbooks/scan.yml -e security_scan_label=before -e security_scan_report_prefix=ci-web 2>&1 | tee scan.log || {
+            grep -E -A4 'FAILED!|fatal:|ERROR' scan.log | head -30 | sed 's/^/::error::/'; exit 1; }
+      - name: The scan must find the planted web shell and cron job
+        run: |
+          grep -q 'Possible web shell' reports/ci-web-before-security-report.md
+          grep -q 'PHP file inside the uploads folder' reports/ci-web-before-security-report.md
+          grep -q 'Suspicious cron job' reports/ci-web-before-security-report.md
+      - name: Web hardening
+        run: |
+          set -o pipefail
+          ansible-playbook playbooks/web.yml 2>&1 | tee web.log || {
+            grep -E -A4 'FAILED!|fatal:|ERROR' web.log | head -30 | sed 's/^/::error::/'; exit 1; }
+      - name: Blocked URLs return 403, the site still works
+        run: |
+          code() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080$1"; }
+          test "$(code /)" = 200
+          test "$(code /xmlrpc.php)" = 403
+          test "$(code /wp-config.php)" = 403
+          test "$(code /wp-content/uploads/2026/11/image.php)" = 403
+          curl -sI http://127.0.0.1:8080/ | grep -qi '^X-Content-Type-Options: nosniff'
+          ! curl -sI http://127.0.0.1:8080/ | grep -qiE '^Server: nginx/[0-9]'
+      - name: Idempotence
+        run: |
+          ansible-playbook playbooks/web.yml | tee second-run.log
+          grep -qE 'changed=0 +unreachable=0 +failed=0' second-run.log
+      - name: Scan after
+        run: ansible-playbook playbooks/scan.yml -e security_scan_label=after -e security_scan_report_prefix=ci-web
+      - uses: actions/upload-artifact@v5
+        with:
+          name: security-reports-web
+          path: reports/

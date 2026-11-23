@@ -1,0 +1,145 @@
+{% set s = security_scan_result %}
+{% set h = s.hardening %}
+{% set sys = s.system %}
+{% macro yes(ok) %}{{ '✅' if ok else '❌' }}{% endmacro %}
+{% set icon = {'high': '🔴 High', 'medium': '🟠 Medium', 'low': '🟡 Low', 'info': 'ℹ️ Info'} %}
+# Linux Server Security Report: {{ sys.hostname }}
+
+| | |
+|---|---|
+| **Server** | {{ sys.hostname }} |
+| **System** | {{ sys.os }} (kernel {{ sys.kernel }}) |
+| **Uptime** | {{ sys.uptime_days }} days |
+| **Scan date** | {{ sys.scan_time }} |
+| **Report** | {{ security_scan_label }} |
+{% if h.lynis_index is not none %}
+| **Lynis hardening index** | {{ h.lynis_index }} / 100 |
+{% endif %}
+
+This scan is **read-only**: it did not change anything on the server.
+
+## Summary
+
+| Severity | Findings |
+|---|---|
+| 🔴 High (fix now) | {{ s.counts.high }} |
+| 🟠 Medium (fix this week) | {{ s.counts.medium }} |
+| 🟡 Low (good practice) | {{ s.counts.low }} |
+
+{% if s.counts.high == 0 and s.counts.medium == 0 %}
+**Overall: good.** No urgent problems were found.
+{% elif s.counts.high == 0 %}
+**Overall: fair.** Nothing urgent, but some settings should be improved.
+{% else %}
+**Overall: action needed.** {{ s.counts.high }} problem(s) should be fixed as soon as possible.
+{% endif %}
+
+## Security checklist
+
+| Check | Status | Detail |
+|---|---|---|
+| SSH: root login disabled | {{ yes(h.ssh_root_login == 'no') }} | PermitRootLogin {{ h.ssh_root_login }} |
+| SSH: password login disabled (keys only) | {{ yes(h.ssh_password_auth == 'no') }} | PasswordAuthentication {{ h.ssh_password_auth }} |
+| SSH: limited login attempts | {{ yes(h.ssh_max_auth_tries | string in ['1', '2', '3', '4']) }} | MaxAuthTries {{ h.ssh_max_auth_tries }} |
+| Firewall active | {{ yes(h.firewall != 'none') }} | {{ h.firewall }} |
+| Brute-force protection (Fail2ban) | {{ yes(h.fail2ban) }} | {{ (h.fail2ban_total_banned | string ~ ' IPs banned so far') if h.fail2ban else 'not running' }} |
+| Automatic security updates | {{ yes(h.auto_updates) }} | |
+| No pending security updates | {{ yes(not h.pending_security_updates) }} | {{ h.pending_security_updates if h.pending_security_updates is not none else 'unknown' }} pending |
+| SELinux / AppArmor | {{ yes('Enforcing' in h.mac or 'enabled' in h.mac) }} | {{ h.mac }} |
+| No extra root accounts | {{ yes(not s.accounts.uid0_extra) }} | {{ s.accounts.uid0_extra | join(', ') or 'none' }} |
+| No accounts without password | {{ yes(not s.accounts.empty_passwords) }} | {{ s.accounts.empty_passwords | join(', ') or 'none' }} |
+| No suspicious processes | {{ yes(not s.suspicious_processes) }} | {{ s.suspicious_processes | length }} found |
+| No web shells found | {{ yes(not s.web.suspicious and not s.web.php_in_uploads) }} | {{ s.web.files_scanned }} web files scanned |
+
+## Findings and how to fix them
+
+{% for f in s.findings %}
+### {{ loop.index }}. {{ icon[f.severity] }} | {{ f.area }}: {{ f.title }}
+
+{% if f.detail %}
+- **What we found / why it matters:** {{ f.detail }}
+{% endif %}
+{% if f.fix %}
+- **How to fix:** {{ f.fix }}
+{% endif %}
+
+{% else %}
+No problems found. 🎉
+
+{% endfor %}
+## Server inventory
+
+### Services listening on the network
+
+| Port | Protocol | Address | Program |
+|---|---|---|---|
+{% for p in s.listening_ports | sort(attribute='port') %}
+| {{ p.port }} | {{ p.proto }} | {{ p.address }} | {{ p.process }} |
+{% endfor %}
+
+### Users who can log in
+
+| User | UID | Shell | SSH keys |
+|---|---|---|---|
+{% for u in s.accounts.shell_users %}
+{% set k = s.accounts.ssh_keys | selectattr('user', 'equalto', u.user) | map(attribute='keys') | first | default(0) %}
+| {{ u.user }} | {{ u.uid }} | {{ u.shell }} | {{ k }} |
+{% endfor %}
+
+### sudo rules
+
+{% for r in s.accounts.sudo_rules %}
+- `{{ r.rule }}` ({{ r.file }})
+{% else %}
+- none
+{% endfor %}
+
+### Scheduled tasks and custom services
+
+- Cron jobs: **{{ s.cron_jobs | length }}**
+- Custom systemd services in /etc/systemd/system: **{{ s.local_services | length }}**
+- Programs with root (SUID) rights: **{{ s.suid.count }}** ({{ s.suid.unusual | length }} in unusual places)
+
+{% if s.web.roots %}
+## Website scan
+
+- Folders scanned: {{ s.web.roots | join(', ') }}
+- Files scanned: **{{ s.web.files_scanned }}**
+- Possible web shells / malware: **{{ s.web.suspicious | length }}**
+- PHP files inside uploads: **{{ s.web.php_in_uploads | length }}**
+- Files changed in the last {{ security_scan_recent_days }} days: **{{ s.web.recent_count }}**
+
+{% if s.web.wordpress %}
+### WordPress sites
+
+| Folder | Version | wp-config.php mode | File editor off | Debug off |
+|---|---|---|---|---|
+{% for w in s.web.wordpress %}
+| {{ w.path }} | {{ w.version }} | {{ w.wp_config_mode }} | {{ yes(w.file_edit_disabled) }} | {{ yes(not w.debug_on) }} |
+{% endfor %}
+{% endif %}
+
+{% if s.web.recent %}
+### Recently changed web files (first {{ s.web.recent | length }})
+
+| File | Modified |
+|---|---|
+{% for r in s.web.recent %}
+| {{ r.file }} | {{ r.modified }} |
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if s.http %}
+## Web server response (http://127.0.0.1/)
+
+| Header | Value |
+|---|---|
+| Server | {{ s.http.server or '(hidden)' }} |
+| X-Frame-Options | {{ s.http.x_frame_options or '❌ missing' }} |
+| X-Content-Type-Options | {{ s.http.x_content_type_options or '❌ missing' }} |
+| Referrer-Policy | {{ s.http.referrer_policy or '❌ missing' }} |
+{% endif %}
+
+---
+*Generated by [linux-hardening-ansible](https://github.com/ahmedbmohamed/linux-hardening-ansible) (security_scan role). Read-only scan; findings should be reviewed by an administrator before acting on them.*

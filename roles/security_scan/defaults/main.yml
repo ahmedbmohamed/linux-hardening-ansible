@@ -1,0 +1,14 @@
+---
+# Folders scanned for web shells, PHP in uploads and recent changes
+security_scan_web_roots:
+  - /var/www
+# "Recently changed" = modified in the last N days
+security_scan_recent_days: 7
+# Stop the web scan after this many files
+security_scan_max_files: 50000
+# Where the reports are written on the machine that runs Ansible
+security_scan_report_dir: "{{ playbook_dir }}/../reports"
+# Report file name prefix (default: inventory host name)
+security_scan_report_prefix: "{{ inventory_hostname }}"
+# Label added to the file name, e.g. "before" / "after"
+security_scan_label: scan

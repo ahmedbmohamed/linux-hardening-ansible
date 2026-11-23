@@ -1,0 +1,9 @@
+---
+# Read-only security scan + client report in reports/
+#   ansible-playbook playbooks/scan.yml -e security_scan_label=before
+#   ansible-playbook playbooks/scan.yml -e security_scan_label=after
+- name: Security scan and report
+  hosts: all
+  become: true
+  roles:
+    - role: security_scan

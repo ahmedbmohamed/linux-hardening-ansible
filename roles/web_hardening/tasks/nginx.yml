@@ -1,0 +1,83 @@
+---
+- name: Check the Nginx configuration before changing anything
+  ansible.builtin.command: nginx -t
+  register: web_hardening_nginx_precheck
+  changed_when: false
+  failed_when: false
+
+- name: Nginx was already broken before any change
+  ansible.builtin.fail:
+    msg: "'nginx -t' already fails BEFORE any change, so nothing was touched. Fix it first: {{ web_hardening_nginx_precheck.stderr_lines | last | default('') }}"
+  when: web_hardening_nginx_precheck.rc != 0
+
+- name: Nginx changes (rolled back automatically if 'nginx -t' fails)
+  block:
+    - name: Server-wide security settings (hide version, security headers)
+      ansible.builtin.template:
+        src: nginx-security.conf.j2
+        dest: /etc/nginx/conf.d/00-security.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Snippets folder
+      ansible.builtin.file:
+        path: /etc/nginx/snippets
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: WordPress security snippet
+      ansible.builtin.template:
+        src: nginx-wordpress-security.conf.j2
+        dest: /etc/nginx/snippets/wordpress-security.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Find the Nginx site files that serve each WordPress folder
+      ansible.builtin.command: >-
+        grep -rlE "^[[:space:]]*root[[:space:]]+{{ item | regex_escape(re_type='posix_basic') }}/?[[:space:]]*;" /etc/nginx
+      loop: "{{ web_hardening_wp_roots }}"
+      register: web_hardening_nginx_sites
+      changed_when: false
+      failed_when: web_hardening_nginx_sites.rc > 1
+
+    - name: Include the WordPress snippet right after the 'root' line
+      ansible.builtin.lineinfile:
+        path: "{{ item.1 }}"
+        insertafter: '^\s*root\s+{{ item.0.item | regex_escape }}/?\s*;'
+        line: "    include /etc/nginx/snippets/wordpress-security.conf;"
+      loop: "{{ web_hardening_nginx_sites.results | subelements('stdout_lines') }}"
+      loop_control:
+        label: "{{ item.1 }}"
+      notify: Reload nginx
+
+    - name: Test the full Nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+  rescue:
+    - name: Remove the server-wide settings (config test failed)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/nginx/conf.d/00-security.conf
+        - /etc/nginx/snippets/wordpress-security.conf
+
+    - name: Remove the snippet include lines
+      ansible.builtin.lineinfile:
+        path: "{{ item.1 }}"
+        line: "    include /etc/nginx/snippets/wordpress-security.conf;"
+        state: absent
+      loop: "{{ web_hardening_nginx_sites.results | default([]) | subelements('stdout_lines') }}"
+      loop_control:
+        label: "{{ item.1 }}"
+
+    - name: Stop here, Nginx was left as it was
+      ansible.builtin.fail:
+        msg: "'nginx -t' failed after the changes, so they were removed and Nginx was not reloaded. Run 'nginx -t' to see why."

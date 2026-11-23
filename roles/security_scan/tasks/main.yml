@@ -1,0 +1,47 @@
+---
+# Read-only: nothing on the server is changed.
+- name: Run the security scan (read-only, about 10-60 seconds)
+  ansible.builtin.script:
+    cmd: >-
+      collect.py
+      --web-roots {{ security_scan_web_roots | map('quote') | join(' ') }}
+      --recent-days {{ security_scan_recent_days | int }}
+      --max-files {{ security_scan_max_files | int }}
+    executable: "{{ ansible_facts['python']['executable'] | default('/usr/bin/python3') }}"
+  register: security_scan_raw
+  changed_when: false
+
+- name: Read the scan results
+  ansible.builtin.set_fact:
+    security_scan_result: "{{ security_scan_raw.stdout | from_json }}"
+
+- name: Reports folder on this computer
+  ansible.builtin.file:
+    path: "{{ security_scan_report_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Write the client report (Markdown)
+  ansible.builtin.template:
+    src: report.md.j2
+    dest: "{{ security_scan_report_dir }}/{{ security_scan_report_prefix }}-{{ security_scan_label }}-security-report.md"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+
+- name: Save the raw results (JSON)
+  ansible.builtin.copy:
+    content: "{{ security_scan_result | to_nice_json }}"
+    dest: "{{ security_scan_report_dir }}/{{ security_scan_report_prefix }}-{{ security_scan_label }}-security-scan.json"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+
+- name: Result
+  ansible.builtin.debug:
+    msg:
+      - "{{ security_scan_report_prefix }} [{{ security_scan_label }}]: {{ security_scan_result.counts.high }} high, {{ security_scan_result.counts.medium }} medium, {{ security_scan_result.counts.low }} low"
+      - "Report: reports/{{ security_scan_report_prefix }}-{{ security_scan_label }}-security-report.md"

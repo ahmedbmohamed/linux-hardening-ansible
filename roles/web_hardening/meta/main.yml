@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: web_hardening
+  author: Ahmed Ben Mohamed
+  description: Nginx / Apache and WordPress security baseline, config tested before every reload
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["9"]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+  galaxy_tags: [security, hardening, nginx, apache, wordpress]
+dependencies: []

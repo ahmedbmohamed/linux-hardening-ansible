@@ -1,0 +1,56 @@
+---
+- name: Check the Apache configuration before changing anything
+  ansible.builtin.command: "{{ web_hardening_apache_ctl }} configtest"
+  register: web_hardening_apache_precheck
+  changed_when: false
+  failed_when: false
+
+- name: Apache was already broken before any change
+  ansible.builtin.fail:
+    msg: "The Apache config test already fails BEFORE any change, so nothing was touched. Fix it first: {{ web_hardening_apache_precheck.stderr_lines | last | default('') }}"
+  when: web_hardening_apache_precheck.rc != 0
+
+- name: Apache changes (rolled back automatically if the config test fails)
+  block:
+    - name: Enable mod_headers (Debian family)
+      ansible.builtin.command: a2enmod headers
+      args:
+        creates: /etc/apache2/mods-enabled/headers.load
+      when: ansible_facts['os_family'] == 'Debian'
+      notify: Reload apache
+
+    - name: Security settings (named zz- so they load last and win)
+      ansible.builtin.template:
+        src: apache-security.conf.j2
+        dest: "{{ web_hardening_apache_conf_dir }}/zz-security-hardening.conf"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload apache
+
+    - name: Enable the settings (Debian family)
+      ansible.builtin.command: a2enconf zz-security-hardening
+      args:
+        creates: /etc/apache2/conf-enabled/zz-security-hardening.conf
+      when: ansible_facts['os_family'] == 'Debian'
+      notify: Reload apache
+
+    - name: Test the full Apache configuration
+      ansible.builtin.command: "{{ web_hardening_apache_ctl }} configtest"
+      changed_when: false
+
+  rescue:
+    - name: Disable the settings (Debian family)
+      ansible.builtin.file:
+        path: /etc/apache2/conf-enabled/zz-security-hardening.conf
+        state: absent
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Remove the settings file
+      ansible.builtin.file:
+        path: "{{ web_hardening_apache_conf_dir }}/zz-security-hardening.conf"
+        state: absent
+
+    - name: Stop here, Apache was left as it was
+      ansible.builtin.fail:
+        msg: "The Apache config test failed after the changes, so they were removed and Apache was not reloaded. Run '{{ web_hardening_apache_ctl }} configtest' to see why."

@@ -1,0 +1,7 @@
+---
+# Nginx / Apache + WordPress hardening (config tested before every reload)
+- name: Harden web servers
+  hosts: all
+  become: true
+  roles:
+    - role: web_hardening
