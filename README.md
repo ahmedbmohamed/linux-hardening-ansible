@@ -81,13 +81,14 @@ The scan finds the web shell, the PHP file in uploads and the cron job; after `w
 | Scan before | 4 | 11 | 2 |
 | Scan after `web.yml` | 4 | **6** | **0** |
 
-| URL | Before | After |
-|---|---|---|
-| `/` (site) | 200 | **200** (still works) |
-| `/xmlrpc.php` | 200 | **403** |
-| `/wp-config.php` | 200 | **403** |
-| `/wp-content/uploads/.../image.php` (planted shell) | 200 | **403** |
-| `Server` header | `nginx/1.18.0 (Ubuntu)` | **`nginx`** (version hidden) |
+| Check after `web.yml` | Result |
+|---|---|
+| `/` (site) | **200** (still works) |
+| `/xmlrpc.php` | **403** |
+| `/wp-config.php` | **403** |
+| `/wp-content/uploads/.../image.php` (planted shell) | **403** |
+| `Server` header | **`nginx`** (version hidden) |
+| Security headers | `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff` |
 
 Second run of `web.yml`: `changed=0`. The 4 high findings left are on purpose: the planted shell, the PHP file in uploads and the cron job are **reported for a human to remove**, and the pending security updates were being installed by unattended-upgrades.
 
