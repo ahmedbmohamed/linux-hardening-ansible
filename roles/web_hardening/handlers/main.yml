@@ -1,12 +1,11 @@
 ---
+# try-reload-or-restart only acts on a running service: a stopped web server stays stopped.
 - name: Reload nginx
-  ansible.builtin.systemd_service:
-    name: nginx
-    state: reloaded
+  ansible.builtin.command: systemctl try-reload-or-restart nginx  # noqa: command-instead-of-module
+  changed_when: true
   when: web_hardening_manage_services | bool
 
 - name: Reload apache
-  ansible.builtin.systemd_service:
-    name: "{{ web_hardening_apache_service }}"
-    state: reloaded
+  ansible.builtin.command: "systemctl try-reload-or-restart {{ web_hardening_apache_service }}"  # noqa: command-instead-of-module
+  changed_when: true
   when: web_hardening_manage_services | bool
