@@ -5,3 +5,4 @@ reports/*
 *.retry
 second-run.log
 *.log
+__pycache__/
