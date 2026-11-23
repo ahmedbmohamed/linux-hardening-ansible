@@ -74,6 +74,23 @@ sudo bash tests/demo-site.sh --remove                          # clean up
 
 The scan finds the web shell, the PHP file in uploads and the cron job; after `web.yml`, `xmlrpc.php`, `wp-config.php` and the shell return **403** while the site still works.
 
+**Result on an Ubuntu 22.04 VM (VMware), demo site:**
+
+| | High | Medium | Low |
+|---|---|---|---|
+| Scan before | 4 | 11 | 2 |
+| Scan after `web.yml` | 4 | **6** | **0** |
+
+| URL | Before | After |
+|---|---|---|
+| `/` (site) | 200 | **200** (still works) |
+| `/xmlrpc.php` | 200 | **403** |
+| `/wp-config.php` | 200 | **403** |
+| `/wp-content/uploads/.../image.php` (planted shell) | 200 | **403** |
+| `Server` header | `nginx/1.18.0 (Ubuntu)` | **`nginx`** (version hidden) |
+
+Second run of `web.yml`: `changed=0`. The 4 high findings left are on purpose: the planted shell, the PHP file in uploads and the cron job are **reported for a human to remove**, and the pending security updates were being installed by unattended-upgrades.
+
 ## Results
 
 Measured on two lab VMs (VMware), default role settings, no SSH key given (so password login stays on):
